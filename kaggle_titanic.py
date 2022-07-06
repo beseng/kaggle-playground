@@ -5,16 +5,19 @@ Created on Mon Jun 27 15:39:38 2022
 @author: BSeng
 """
 
-#no clue how to do this right now so uhhh
-# titnanic. 
+#TO DO: Better data cleaning - maybe try SMOTE?
+#Train the RF model better
+#Set up better tensorflow model
 
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import sklearn
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import cross_validate
 import pandas as pd
 import tensorflow as tf
+from sklearn.model_selection import GridSearchCV
 
 
 testData = pd.read_csv("C:\\Users\BSeng\\OneDrive - Minitab, LLC\\Documents\\titanic\\test.csv")
@@ -31,7 +34,6 @@ uniqueCabin = pd.Series(trainData['Cabin']).drop_duplicates().tolist() #look to 
 #Electing to remove due to the high volume of missing data from .info().
 trainData=trainData.drop(labels=['Cabin'],axis=1)
 testData=testData.drop(labels=['Cabin'],axis=1)
-
 
 #save these for later
 testPassengerIds = testData['PassengerId']
@@ -91,7 +93,6 @@ medianTrain['Parch'].fillna(trainData['Parch'].mode(),inplace=True)
 medianTest['Parch'].fillna(testData['Parch'].mode(),inplace=True)
 
 #MODEL TIME OH BOY
-
 y = medianTrain['Survived']
 X = medianTrain.drop('Survived',axis=1)
 XTrain, XTest, yTrain, yTest = sklearn.model_selection.train_test_split(X, y, test_size = 0.2, random_state=2)
@@ -108,10 +109,29 @@ yPredict = extraTreeModel.predict(XTest)
 extraTreeModelAccuracy = sklearn.metrics.accuracy_score(yTest,yPredict)
 
 #ok that didn't work RANDOM FOREST TIME
+#Naive model setup
 RFModel = RandomForestClassifier(n_estimators = 2000, criterion='entropy',max_depth=20)
+cvResults = cross_validate(RFModel, X, y,cv=5,scoring=["accuracy","precision","recall"])
+print("Accuracy: ", cvResults["test_accuracy"].mean())
+
 RFModel.fit(XTrain,yTrain)
 yPredict=RFModel.predict(XTest)
 RFModelAccuracy = sklearn.metrics.accuracy_score(yTest,yPredict)
+#Let's use gridsearch to optimize RF parameters. Credit to https://www.kaggle.com/code/manishkc06/model-optimization-with-random-forest/notebook for the idea.
+criterion = ['gini','entropy']
+nEst = [2500,2600,2700,2800,2900,3000]
+featureVals = ['auto','sqrt']
+maxDepth=[20,22,25,27,30]
+maxDepth.append(None)
+gridsearchParams = {'criterion': criterion,
+                    'n_estimators': nEst,
+                    'max_features': featureVals,
+                    'max_depth': maxDepth}
+
+gridSearchRes = GridSearchCV(RFModel, gridsearchParams)
+gridSearchRes.fit(XTrain,yTrain) 
+gridSearchRes.best_params_
+gridSearchRes.best_score_ #pretty good!
 
 #tensorflow. Credit to https://towardsdatascience.com/how-to-train-a-classification-model-with-tensorflow-in-10-minutes-fd2b7cfba86 for tutorial
 tf.random.set_seed(1198)
