@@ -1,9 +1,10 @@
 #2nd Kaggle competition in R this time.
 library(corrplot)
 library(MASS)
-
+library(mice)
 #TODO
-#clean data - remove lots of NA values. 
+#clean data - remove lots of NA values. We will need to recode the categorical data to numeric (0,1,2, etc.), decide what to drop, and what to impute 
+#and how to impute it!
 #EDA
 #begin model selection
 #figure out important variables
@@ -19,41 +20,13 @@ testData=testData[-1] #drop ID value
 
 summary(trainData) #variables are quite different from each other. Some categorical, some continuous. 
 #LotFrontage has many missings. GarageYrBlt and MasVnrArea also have missings. Optional house features, like BsmtFin, will be skewed.
-
-#to be continued
-
-#Let's begin with stepwise forward regression
-model = lm(SalePrice ~ ., data=trainData)
-#returns an error due to one category having a singleton value. Let's find it.
-table(trainData$SaleType)
-table(trainData$SaleCondition)
-table(trainData$PoolQC) #<- no data at all, removing.
-table(trainData$PavedDrive)
-table(trainData$GarageCond)
-table(trainData$GarageQual)
-table(trainData$GarageFinish)
-table(trainData$GarageType)
-table(trainData$FireplaceQu)
-table(trainData$Alley) #NA here means No alley access, not missing data. Need to recode.
-trainData$Alley[is.na(trainData$Alley)]="No"
-table(trainData$Fence) #sparse
-table(trainData$MiscFeature) #sparse and not all classes
-table(trainData$Utilities) #this has a single NoSeWA class. Let's remove and see what happens.
-table(trainData$Condition2) #This, RoofMatl, and Condition 1 have very sparse classes. 
-
-vectorOfSingleton=list()
-for (i in 1:length(trainData)){
-  vectorOfSingleton[i] = length(unique(trainData[,i]))
-}
-
-test = trainData[-5]
-#So no actual issues.
-
-trainData=trainData[,names(trainData)!="Utilities"]
-testData=testData[,names(testData)!="Utilities"]
-
+str(trainData)
 #Issue ended up being the NA values in PoolQC, Fence, and MiscFeature. These have so few values I feel comfortable removing them.
-#Need to do some more data cleaning for NA values before actually doing stepwise selection. 
+colSums(is.na(trainData)) #as confirmed, lotFrontage, PoolQC, FireplaceQu, miscFeature,Fence. Most I'll remove, some I want to keep.
+
+trainData=trainData[,names(trainData)!="Alley"]
+testData=testData[,names(testData)!="Alley"]
+
 trainData=trainData[,names(trainData)!="PoolQc"]
 testData=testData[,names(testData)!="PoolQc"]
 
@@ -63,14 +36,62 @@ testData=testData[,names(testData)!="Fence"]
 trainData=trainData[,names(trainData)!="MiscFeature"]
 testData=testData[,names(testData)!="MiscFeature"]
 
-#NA probably has something to do with the lm ~ . not working, until then this is the full model.
-model <- lm(SalePrice ~ MSSubClass+MSZoning+LotFrontage+LotArea+Street+Alley+LotShape+LandContour+LandSlope
-            +Neighborhood+Condition1+Condition2+BldgType+HouseStyle+OverallQual+OverallCond+YearBuilt+YearRemodAdd
-            +RoofStyle+RoofMatl+Exterior1st+Exterior2nd+MasVnrType+MasVnrArea+ExterQual+ExterCond+Foundation+BsmtQual
-            +BsmtCond+BsmtExposure+BsmtFinType1+BsmtFinSF1+BsmtFinType2+BsmtFinSF2+BsmtUnfSF+TotalBsmtSF+Heating
-            +HeatingQC+CentralAir+Electrical+X1stFlrSF+X2ndFlrSF+LowQualFinSF+GrLivArea+BsmtFullBath+BsmtHalfBath
-            +FullBath+HalfBath+BedroomAbvGr+KitchenAbvGr+KitchenQual+TotRmsAbvGrd+Functional+Fireplaces+FireplaceQu
-            +GarageType+GarageYrBlt+GarageFinish+GarageCars+GarageArea+GarageQual+GarageCond+PavedDrive+WoodDeckSF
-            +OpenPorchSF+EnclosedPorch+X3SsnPorch+ScreenPorch+PoolArea+MiscVal+MoSold+YrSold+SaleType+SaleCondition,data=trainData)
+trainData=trainData[,names(trainData)!="FireplaceQu"]
+testData=testData[,names(testData)!="FireplaceQu"]
 
-smallModel <- lm(SalePrice ~ YrSold+SaleType,data=trainData)
+trainData=trainData[,names(trainData)!="Utilities"]
+testData=testData[,names(testData)!="Utilities"]
+
+#Let's begin with the categorical data.
+cateDat=which(sapply(trainData,is.character)==TRUE)
+
+table(trainData$MSZoning)
+#RH, RM, RL are all residential and the others are not. Let's have 3 categories. We could also have NAs as 0 with a binary column to denote missings...
+trainData$temp[trainData$MSZoning %in% c("FV")] <- 3
+trainData$temp[trainData$MSZoning %in% c("RH","RM","RL")] <- 2
+trainData$temp[trainData$MSZoning %in% c("C (all)")] <- 1
+trainData$MSZoning = trainData$temp 
+
+table(trainData$Street)
+trainData$temp[trainData$Street %in% c("Grvl")] <- 2
+trainData$temp[trainData$Street %in% c("Pave")] <- 1
+trainData$Street = trainData$temp
+
+table(trainData$LotShape)
+trainData$temp[trainData$LotShape %in% c("IR1")] <- 4
+trainData$temp[trainData$LotShape %in% c("IR2")] <- 3
+trainData$temp[trainData$LotShape %in% c("IR3")] <- 2
+trainData$temp[trainData$LotShape %in% c("Reg")] <- 1
+trainData$LotShape = trainData$temp 
+
+table(trainData$LandContour)
+trainData$temp[trainData$LandContour %in% c("Bnk")] <- 4
+trainData$temp[trainData$LandContour %in% c("HLS")] <- 3
+trainData$temp[trainData$LandContour %in% c("Low")] <- 2
+trainData$temp[trainData$LandContour %in% c("Lvl")] <- 1
+trainData$LandContour = trainData$temp 
+
+table(trainData$LotConfig)
+#According to https://journal.firsttuesday.us/type-of-lots/70394/, it makes sense to group the frontage+corners, and cul de dac with inside.
+trainData$temp[trainData$LotConfig %in% c("Corner","FR2","FR3")] <- 2
+trainData$temp[trainData$LotConfig %in% c("CulDSac","Inside")] <- 1
+trainData$LotConfig = trainData$temp 
+
+
+
+#now we'll look at the continuous data. Here we might just impute based on means for now. 
+contDat=which(sapply(trainData,is.numeric)==TRUE)
+
+
+
+
+
+
+corrplot(cor(trainData[,c(3,4,16,17,18,19)],use="everything"),sig.level = 0.01,insig="blank") 
+trainData$LotFrontage[is.na(trainData$LotFrontage)] = 0 #lot frontage has NAs
+#############################################
+
+
+
+
+
